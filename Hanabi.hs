@@ -94,6 +94,7 @@ data Action =
   -- ^ @Discard i@ is the action for the current player to discard their ith card.
   | TopDeck
   -- ^ @TopDeck@ is the action to play the top card of the draw deck.
+  deriving (Eq, Show)
 
 type Index = Int
 
