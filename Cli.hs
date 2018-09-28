@@ -107,18 +107,38 @@ showCardView (colors, nums)
     shownColors = concat $ map (shortShowColor . Colored) $ Set.toList colors
     shownNums = maybe "x" show nums
 
+showYourHandCard :: Int -> (Card, CardView) -> String
+showYourHandCard i (_, cv) = show i ++ ") " ++ showCardView cv
 
 showYourHand :: Hand -> String
-showYourHand h = "Your hand: " ++ (intercalate " " (map (showCardView . snd) h))
+showYourHand h = "Your hand: " ++ (intercalate "   " (zipWith showYourHandCard [0..] h))
+
+-- Describe the action in present tense.
+showAction :: Action -> String
+showAction (GiveClue p c) = "gives a clue to " ++ show p ++ " naming " ++ showClue c ++ "."
+showAction (PlayCard i) = "plays a card."
+showAction (Discard i) = "discards a card."
+showAction (TopDeck) = "topdecks."
+
+-- Describe the clue:
+showClue :: Clue -> String
+showClue (Left c) = show c
+showClue (Right n) = show n
+
+-- Show history
+showHistory :: [String] -> String
+showHistory [] = ""
+showHistory (a:_) = a
 
 -- Running a game entails shuffling and dealing the deck, then running turns
 -- until the game ends.
 runGame :: IO ()
 runGame = do
     deck <- shuffle standardDeck
-    let state = deal 5 $ mkStartState (Seq.fromList [1,2]) deck
+    let s = deal 5 $ mkStartState (Seq.fromList [1,2]) deck
+    let cs = CliState s []
 
-    doWhile (not . isGameOver) runTurn state
+    doWhile (not . isGameOver . state) runTurn cs
     putStrLn "game over!"
 
 -- While the condition is true on the state, run the function
@@ -128,22 +148,29 @@ doWhile cond fn initialState
     | not (cond initialState) = pure initialState
     | otherwise = fn initialState >>= doWhile cond fn
 
+data CliState = CliState {
+    state :: State, -- game state
+    history :: [String] -- actions
+}
+
 -- Running a turn entails showing the common state and waiting for them to press enter,
 -- then prompting the current user for an action,
 -- then parsing it, applying it to the state and returning the new state.
-runTurn :: State -> IO State
-runTurn s = do
+runTurn :: CliState -> IO CliState
+runTurn cs = do
     ANSI.clearScreen
-    putStrLn $ showCommonState s
-    putStr $ "Give computer to player " ++ (show $ getCurrentPlayer s) ++ " and press enter..."
+    putStrLn $ showHistory (history cs)
+    putStrLn $ showCommonState (state cs)
+    putStr $ "Give computer to player " ++ (show $ getCurrentPlayer $ state cs) ++ " and press enter..."
     getLine -- and throw it away
 
     ANSI.clearScreen
-    let pn = getCurrentPlayer s
-    putStrLn $ showStateToPlayer pn s
+    let pn = getCurrentPlayer (state cs)
+    putStrLn $ showHistory (history cs)
+    putStrLn $ showStateToPlayer pn (state cs)
 
     putStr "Enter action: "
-    Haskeline.runInputT Haskeline.defaultSettings (readEvalAction s)
+    Haskeline.runInputT Haskeline.defaultSettings (readEvalAction cs)
 
 -- read action input from user
 readAction :: Haskeline.InputT IO Action
@@ -155,14 +182,16 @@ readAction = do
             readAction
         Right a -> pure a
 
-readEvalAction :: State -> Haskeline.InputT IO State
-readEvalAction s = do
+readEvalAction :: CliState -> Haskeline.InputT IO CliState
+readEvalAction cs = do
     action <- readAction
-    case act action s of
+    case act action (state cs) of
         Left m -> do
             Haskeline.outputStrLn m
-            readEvalAction s
-        Right s' -> pure s'
+            readEvalAction cs
+        Right s' -> do
+            let actionDescription = showAction action
+            pure $ CliState s' (actionDescription:(history cs))
 
 actionSpec :: Parsec.Parsec String () Char
 actionSpec = PC.oneOf "cpdt"
