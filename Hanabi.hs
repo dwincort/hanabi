@@ -4,7 +4,7 @@ module Hanabi where
 
 import Prelude hiding (fail)
 
-import Control.Arrow (second)
+import Control.Arrow ((&&&), (***), second)
 import Control.Monad (when)
 
 import Data.Foldable
@@ -12,6 +12,9 @@ import Data.Maybe (fromJust)
 
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
+
+import Data.Set (Set)
+import qualified Data.Set as Set
 
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NonEmpty
@@ -52,7 +55,7 @@ mkStartState players deck = State
   , discards        = []
   , played_cards    = mempty
   , number_of_clues = 8
-  , number_of_fails = 0
+  , number_of_fails = 3
   , player_order    = (players, Loop)
   }
 
@@ -66,9 +69,11 @@ data Continue = Loop | Fixed
 type PlayerId = Int
 
 type Deck = [Card]
-type Hand = [Card]
+type Hand = [(Card, CardView)]
 
 type Card = (CardColor, CardNumber)
+
+type CardView = (Set Color, Maybe CardNumber)
 
 type CardNumber = Int
 
@@ -106,7 +111,7 @@ score State{..} = sum played_cards
 -- | Returns True if the game state cannot accept more actions.
 isGameOver :: State -> Bool
 isGameOver State{..} =
-     number_of_fails >= 3
+     number_of_fails <= 0
   || (Seq.null $ fst player_order)
 
 -- | Gets the current player from the state.
@@ -140,21 +145,29 @@ fail = Left
 
 type Clue = Either Color CardNumber
 
--- | Given a clue and a card, return True if the clue applies to the card and
--- False otherwise.
-clueTrue :: Clue -> Card -> Bool
-clueTrue (Left c)  (Colored c', _) = c == c'
-clueTrue (Left _)  (Rainbow, _)    = True
-clueTrue (Right n) (_, n')         = n == n'
+-- | Update the view within a hand given a clue.
+updateHandInfoFromClue :: Clue -> Hand -> Hand
+updateHandInfoFromClue clue hand = fmap (fst &&& uncurry (go clue)) hand
+  where
+    -- go takes a clue, a card, and a view
+    -- returns the updated view
+    go (Left c) (Colored c', _) (colors, num) | c == c' =
+      (Set.insert c colors, num)
+    go (Left c)  (Rainbow, _) (colors, num) =
+      (Set.insert c colors, num)
+    go (Right n) (_, n') (colors, num) | n == n' =
+      (colors, Just n)
+    go _ _ view = view
 
--- | Given a clue and a hand, returns a view of the hand as seen through the clue.
-clueView :: Clue -> Hand -> [Bool]
-clueView = fmap . clueTrue
-
+-- | A card view of no information.
+noCardInfo :: CardView
+noCardInfo = (mempty, Nothing)
 
 -- * State update functions
 
 -- | Ends the current player's turn.
+--
+-- Assumes the game is not over.
 -- Affects player_order.
 nextTurn :: State -> State
 nextTurn state@State{..} =
@@ -167,6 +180,7 @@ nextTurn state@State{..} =
       ((_ :<| players, Fixed), _)  -> (players, Fixed)
 
 -- | Given a card, update the state with an attempt at playing that card.
+--
 -- Affects discards, played_cards, and number_of_fails.
 playCard :: Card -> State -> State
 playCard card@(color, number) state@State{..} =
@@ -183,9 +197,11 @@ playCard card@(color, number) state@State{..} =
         (Just n, n') | n + 1 == n' ->
           (discards, Map.insert color n' played_cards, number_of_fails)
         _ ->
-          (card : discards, played_cards, number_of_fails + 1)
+          (card : discards, played_cards, number_of_fails - 1)
 
 -- | Given a card, update the state by discarding the card
+--
+-- Assumes the card index is in bounds and the number of clues is below max.
 -- Affects discards and number_of_clues.
 discardCard :: Card -> State -> State
 discardCard card state@State{..} =
@@ -198,6 +214,8 @@ discardCard card state@State{..} =
 -- removing that card from the player's hand and having them draw a new card
 -- (or leaving their hand not quite full if the deck is empty).
 -- Also returns the card that was removed from the player's hand.
+--
+-- Assumes the card index is in bounds.
 -- Affects deck and hands.
 currentPlayerPopAndDraw :: Index -> State -> (Card, State)
 currentPlayerPopAndDraw i state@State{..} =
@@ -208,10 +226,23 @@ currentPlayerPopAndDraw i state@State{..} =
   where
     currentPlayer = getCurrentPlayer state
     (poppedCard, newHands) = Map.alterF go currentPlayer hands
-    go (Just hand) = second Just (listRemove i hand)
+    go (Just hand) = (fst *** Just) (listRemove i hand)
     go Nothing = error "Impossible"
     (topDeckCard, newDeck) = uncons deck
-    newHands' = maybe newHands (\x -> Map.adjust (x:) currentPlayer newHands) topDeckCard
+    newHands' = maybe newHands addCard topDeckCard
+    addCard card = Map.adjust ((card,noCardInfo):) currentPlayer newHands
+
+-- | Give a clue to the given player, updating their view of their cards with the
+-- new information.
+--
+-- Assumes there are available clues and that the given player is not the current player.
+-- Affects hands and number_of_clues.
+giveClue :: PlayerId -> Clue -> State -> State
+giveClue receiver clue state@State{..} =
+  state
+  { hands = Map.adjust (updateHandInfoFromClue clue) receiver hands
+  , number_of_clues = number_of_clues - 1
+  }
 
 -- | This is the main state update function.
 -- Given an action and a state, return the updated state.
@@ -220,12 +251,12 @@ currentPlayerPopAndDraw i state@State{..} =
 act :: Action -> State -> Either String State
 act _ state | isGameOver state = fail "Game is over."
 
-act (GiveClue toWhom _) state@State{..} = do
+act (GiveClue toWhom clue) state@State{..} = do
   when (toWhom == getCurrentPlayer state)
     $ fail "Player cannot give a clue to self."
   when (number_of_clues <= 0)
     $ fail "Cannot give a clue when no clues remain."
-  pure $ nextTurn $ state { number_of_clues = number_of_clues - 1 }
+  pure $ nextTurn $ giveClue toWhom clue state
 
 act (PlayCard i) state@State{..} = do
   when (i < 0 || i >= length (hands ! getCurrentPlayer state))
@@ -281,4 +312,9 @@ deal n state@State{..} =
     deal' 0 = id
     deal' n = deal' (n-1) . uncurry (Map.mapAccum go)
     go [] h = ([], h)
-    go (x:xs) h = (xs, x:h)
+    go (x:xs) h = (xs, (x, noCardInfo):h)
+
+
+mkMyState = do
+  deck <- shuffle standardDeck
+  pure $ deal 5 $ mkStartState (Seq.fromList [1,2]) deck
