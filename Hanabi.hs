@@ -1,22 +1,18 @@
-{-# LANGUAGE RecordWildCards, PatternSynonyms #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Hanabi where
 
-import Prelude hiding (fail)
-
-import Control.Arrow ((&&&), (***), second)
+import Control.Arrow (second, (&&&), (***))
 import Control.Monad (when)
 
-import Data.Foldable
-
-import Data.Map.Strict (Map, (!))
+import           Data.Foldable
+import           Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
-
-import Data.Set (Set)
-import qualified Data.Set as Set
-
-import Data.Sequence (Seq, pattern (:<|), pattern (:|>), pattern Empty)
-import qualified Data.Sequence as Seq
+import           Data.Sequence   (pattern (:<|), pattern (:|>), pattern Empty, Seq)
+import qualified Data.Sequence   as Seq
+import           Data.Set        (Set)
+import qualified Data.Set        as Set
 
 import qualified System.Random as Rand
 
@@ -122,7 +118,7 @@ getCurrentPlayer State{..} =
 -- | A helper function to index and remove the ith element from the list.
 -- If i is out of bounds, this function will error.
 listRemove :: Int -> [a] -> (a, [a])
-listRemove _ [] = error "listRemove failure"
+listRemove _ []     = error "listRemove failure"
 listRemove 0 (x:xs) = (x, xs)
 listRemove n (x:xs) = second (x:) (listRemove (n - 1) xs)
 
@@ -130,13 +126,26 @@ listRemove n (x:xs) = second (x:) (listRemove (n - 1) xs)
 -- wrapper only around the unconsed element and not around the tail.  If an
 -- empty list is passed, the tail remains the empty list.
 uncons :: [a] -> (Maybe a, [a])
-uncons [] = (Nothing, [])
+uncons []     = (Nothing, [])
 uncons (x:xs) = (Just x, xs)
 
--- | Failure in the 'Either String' monad.
-fail :: String -> Either String a
-fail = Left
 
+-- * Our exception monad
+
+-- | Failure in the 'Either String' monad.
+failWith :: String -> Either String a
+failWith = Left
+
+-- | Handle an error, and try again.
+repeatOnFail :: Monad m
+  => m a               -- ^ An initial value
+  -> (a -> Either b c) -- ^ A computation that may fail
+  -> (b -> m a)        -- ^ Given the failure value, produce a new input to our
+                       -- computation
+  -> m c
+repeatOnFail ma f handle = ma >>= \a -> case f a of
+  Left s  -> repeatOnFail (handle s) f handle
+  Right b -> pure b
 
 -- * Clues
 
@@ -160,6 +169,7 @@ updateHandInfoFromClue clue hand = fmap (fst &&& uncurry (go clue)) hand
 noCardInfo :: CardView
 noCardInfo = (mempty, Nothing)
 
+
 -- * State update functions
 
 -- | Ends the current player's turn.
@@ -171,7 +181,7 @@ nextTurn state@State{..} =
   state { player_order = newPlayerOrder }
   where
     newPlayerOrder = case (player_order, deck) of
-      ((Empty, _), _) -> (mempty, Fixed)
+      ((Empty, _), _)              -> (mempty, Fixed)
       ((a :<| players, Loop), _:_) -> (players :|> a, Loop)
       ((a :<| players, Loop), [])  -> (players :|> a, Fixed)
       ((_ :<| players, Fixed), _)  -> (players, Fixed)
@@ -224,7 +234,7 @@ currentPlayerPopAndDraw i state@State{..} =
     currentPlayer = getCurrentPlayer state
     (poppedCard, newHands) = Map.alterF go currentPlayer hands
     go (Just hand) = (fst *** Just) (listRemove i hand)
-    go Nothing = error "Impossible"
+    go Nothing     = error "Impossible"
     (topDeckCard, newDeck) = uncons deck
     newHands' = maybe newHands addCard topDeckCard
     addCard card = Map.adjust ((card,noCardInfo):) currentPlayer newHands
@@ -246,29 +256,29 @@ giveClue receiver clue state@State{..} =
 -- This is in an exception monad ('Either String') in case the action or state
 -- make no sense together.
 act :: Action -> State -> Either String State
-act _ state | isGameOver state = fail "Game is over."
+act _ state | isGameOver state = failWith "Game is over."
 
 act (GiveClue toWhom clue) state@State{..} = do
   when (toWhom == getCurrentPlayer state)
-    $ fail "Player cannot give a clue to self."
+    $ failWith "Player cannot give a clue to self."
   when (number_of_clues <= 0)
-    $ fail "Cannot give a clue when no clues remain."
+    $ failWith "Cannot give a clue when no clues remain."
   pure $ nextTurn $ giveClue toWhom clue state
 
 act (PlayCard i) state@State{..} = do
   when (i < 0 || i >= length (hands ! getCurrentPlayer state))
-    $ fail "Card index out of bounds"
+    $ failWith "Card index out of bounds"
   pure $ nextTurn $ uncurry playCard $ currentPlayerPopAndDraw i state
 
 act (Discard i) state@State{..} = do
   when (i < 0 || i >= length (hands ! getCurrentPlayer state))
-    $ fail "Card index out of bounds"
+    $ failWith "Card index out of bounds"
   when (number_of_clues >= 8)
-    $ fail "Cannot discard when at max number of clues"
+    $ failWith "Cannot discard when at max number of clues"
   pure $ nextTurn $ uncurry discardCard $ currentPlayerPopAndDraw i state
 
 act TopDeck state@State{..} = case deck of
-  [] -> fail "Cannot topdeck when the deck is empty"
+  [] -> failWith "Cannot topdeck when the deck is empty"
   topDeckCard : newDeck ->
     pure $ nextTurn $ playCard topDeckCard $ state { deck = newDeck }
 
@@ -308,7 +318,7 @@ deal n state@State{..} =
     (deck', hands') = deal' n (deck, hands)
     deal' 0 = id
     deal' n = deal' (n-1) . uncurry (Map.mapAccum go)
-    go [] h = ([], h)
+    go [] h     = ([], h)
     go (x:xs) h = (xs, (x, noCardInfo):h)
 
 
