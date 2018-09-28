@@ -19,6 +19,8 @@ import qualified Data.List.NonEmpty as NonEmpty
 import Data.Sequence (Seq, pattern (:<|), pattern (:|>), pattern Empty)
 import qualified Data.Sequence as Seq
 
+import qualified System.Random as Rand
+
 -- | The state of the game at any given point
 data State = State
   { deck            :: Deck
@@ -258,9 +260,25 @@ simpleDeck =
                    , number <- [1,1,1,2,2,3,3,4,4,5] ]
 
 -- | Randomize the order of the cards in the deck.
-shuffle :: Deck -> IO Deck
-shuffle = undefined
+shuffle :: [a] -> IO [a]
+shuffle xs = go (length xs) xs [] where
+  go 0 _ result = return result
+  go n lst result = do
+    k <- Rand.randomRIO (0,n-1)
+    let (x, xs) = listRemove k lst
+    go (n-1) xs (x : result)
 
 -- | Takes a number of cards to deal out and deals to each player that many.
+-- Assumes that each player has a hand.
 deal :: Int -> State -> State
-deal = undefined
+deal n state@State{..} =
+  state
+  { deck = deck'
+  , hands = hands'
+  }
+  where
+    (deck', hands') = deal' n (deck, hands)
+    deal' 0 = id
+    deal' n = deal' (n-1) . uncurry (Map.mapAccum go)
+    go [] h = ([], h)
+    go (x:xs) h = (xs, x:h)
