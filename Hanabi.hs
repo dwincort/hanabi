@@ -1,8 +1,13 @@
+{-# LANGUAGE RecordWildCards, PatternSynonyms #-}
 
-module Main where
+module Hanabi where
+
+import Prelude hiding (fail)
 
 import Control.Arrow (second)
+import Control.Monad (when)
 
+import Data.Foldable
 import Data.Maybe (fromJust)
 
 import Data.Map.Strict (Map, (!))
@@ -11,17 +16,29 @@ import qualified Data.Map.Strict as Map
 import Data.List.NonEmpty (NonEmpty(..))
 import qualified Data.List.NonEmpty as NonEmpty
 
-import Data.Sequence (Sequence)
+import Data.Sequence (Seq, pattern (:<|), pattern (:|>), pattern Empty)
 import qualified Data.Sequence as Seq
 
+-- | The state of the game at any given point
 data State = State
   { deck            :: Deck
+  -- ^ The draw deck
   , hands           :: Map PlayerId Hand
+  -- ^ The players' hands
   , discards        :: [Card]
+  -- ^ The discard pile
   , played_cards    :: Map CardColor CardNumber
+  -- ^ The successfully played cards
   , number_of_clues :: Int
+  -- ^ The number of clues available to give
   , number_of_fails :: Int
+  -- ^ The number of failures that have happened so far
   , player_order    :: (Seq PlayerId, Continue)
+  -- ^ The current player order.
+  -- The head of the sequence represents the current player, with the rest of
+  -- the players in sequence after that.  The Continue represents how to proceed
+  -- through the sequence: either putting the current player on the end when we
+  -- go to the next turn or not.
   } deriving (Eq, Show)
 
 -- | Make a default start state using a sequence of players (in order by their
@@ -29,14 +46,18 @@ data State = State
 mkStartState :: Seq PlayerId -> Deck -> State
 mkStartState players deck = State
   { deck            = deck
-  , hands           = Map.fromList $ Seq.toList players `zip` repeat []
+  , hands           = Map.fromList $ toList players `zip` repeat []
   , discards        = []
   , played_cards    = mempty
   , number_of_clues = 8
   , number_of_fails = 0
   , player_order    = (players, Loop)
+  }
 
-
+-- | This is used for player order, and it's perhaps somewhat misnamed.
+-- Loop means that we will keep looping the player order sequence.
+-- Fixed means that we are near the end of the game, and players should not be
+-- appended to the end of the order sequence after their turns.
 data Continue = Loop | Fixed
   deriving (Eq, Show)
 
@@ -49,6 +70,7 @@ type Card = (CardColor, CardNumber)
 
 type CardNumber = Int
 
+-- | A card color is not just a color, because cards can also be rainbow.
 data CardColor =
     Colored Color
   | Rainbow
@@ -59,13 +81,21 @@ data CardColor =
 data Color = Blue | White | Yellow | Green | Red
   deriving (Eq, Ord, Enum, Bounded, Show)
 
+-- | There are four currently defined actions.
 data Action =
     GiveClue PlayerId Clue
+  -- ^ @GiveClue i c@ is the action to give the clue @c@ to player @i@.
   | PlayCard Index
+  -- ^ @PlayCard i@ is the action for the current player to play their ith card.
   | Discard  Index
+  -- ^ @Discard i@ is the action for the current player to discard their ith card.
   | TopDeck
+  -- ^ @TopDeck@ is the action to play the top card of the draw deck.
 
 type Index = Int
+
+
+-- * State query functions
 
 -- | The current score of the state, i.e. how many cards have been successfully played
 score :: State -> Int
@@ -77,29 +107,65 @@ isGameOver State{..} =
      number_of_fails >= 3
   || (Seq.null $ fst player_order)
 
+-- | Gets the current player from the state.
+getCurrentPlayer :: State -> PlayerId
+getCurrentPlayer State{..} =
+  fst player_order `Seq.index` 0
+
+
+-- * Helper functions
+
+-- | A helper function to index and remove the ith element from the list.
+-- If i is out of bounds, this function will error.
+listRemove :: Int -> [a] -> (a, [a])
+listRemove _ [] = error "listRemove failure"
+listRemove 0 (x:xs) = (x, xs)
+listRemove n (x:xs) = second (x:) (listRemove (n - 1) xs)
+
+-- | This is like the Data.List.uncons function except that it puts the Maybe
+-- wrapper only around the unconsed element and not around the tail.  If an
+-- empty list is passed, the tail remains the empty list.
+uncons :: [a] -> (Maybe a, [a])
+uncons [] = (Nothing, [])
+uncons (x:xs) = (Just x, xs)
+
+-- | Failure in the 'Either String' monad.
+fail :: String -> Either String a
+fail = Left
+
+
+-- * Clues
+
+type Clue = Either Color CardNumber
+
+-- | Given a clue and a card, return True if the clue applies to the card and
+-- False otherwise.
+clueTrue :: Clue -> Card -> Bool
+clueTrue (Left c)  (Colored c', _) = c == c'
+clueTrue (Left _)  (Rainbow, _)    = True
+clueTrue (Right n) (_, n')         = n == n'
+
+-- | Given a clue and a hand, returns a view of the hand as seen through the clue.
+clueView :: Clue -> Hand -> [Bool]
+clueView = fmap . clueTrue
+
+
+-- * State update functions
+
+-- | Ends the current player's turn.
+-- Affects player_order.
 nextTurn :: State -> State
 nextTurn state@State{..} =
   state { player_order = newPlayerOrder }
   where
     newPlayerOrder = case (player_order, deck) of
-      ((Empty, _), _) -> mempty
+      ((Empty, _), _) -> (mempty, Fixed)
       ((a :<| players, Loop), _:_) -> (players :|> a, Loop)
       ((a :<| players, Loop), [])  -> (players :|> a, Fixed)
       ((_ :<| players, Fixed), _)  -> (players, Fixed)
 
-listRemove :: Int -> [a] -> (a, [a])
-listRemove _ [] = []
-listRemove 0 (x:xs) = (x, xs)
-listRemove n (x:xs) = second (x:) (listRemove (n - 1) xs)
-
-uncons :: [a] -> (Maybe a, [a])
-uncons [] = (Nothing, [])
-uncons (x:xs) = (Just x, xs)
-
-getCurrentPlayer :: State -> PlayerId
-getCurrentPlayer State{..} =
-  fst player_order `Seq.index` 0
-
+-- | Given a card, update the state with an attempt at playing that card.
+-- Affects discards, played_cards, and number_of_fails.
 playCard :: Card -> State -> State
 playCard card@(color, number) state@State{..} =
   state
@@ -117,6 +183,8 @@ playCard card@(color, number) state@State{..} =
         _ ->
           (card : discards, played_cards, number_of_fails + 1)
 
+-- | Given a card, update the state by discarding the card
+-- Affects discards and number_of_clues.
 discardCard :: Card -> State -> State
 discardCard card state@State{..} =
   state
@@ -124,23 +192,29 @@ discardCard card state@State{..} =
   , number_of_clues = number_of_clues + 1
   }
 
+-- | Given an index into the current player's hand, update the state by
+-- removing that card from the player's hand and having them draw a new card
+-- (or leaving their hand not quite full if the deck is empty).
+-- Also returns the card that was removed from the player's hand.
+-- Affects deck and hands.
 currentPlayerPopAndDraw :: Index -> State -> (Card, State)
 currentPlayerPopAndDraw i state@State{..} =
-  state
+  (poppedCard, state
     { deck = newDeck
     , hands = newHands'
-    }
+    })
   where
     currentPlayer = getCurrentPlayer state
-    (playedCard, newHands) = Map.alterF go currentPlayer hands
+    (poppedCard, newHands) = Map.alterF go currentPlayer hands
     go (Just hand) = second Just (listRemove i hand)
     go Nothing = error "Impossible"
     (topDeckCard, newDeck) = uncons deck
     newHands' = maybe newHands (\x -> Map.adjust (x:) currentPlayer newHands) topDeckCard
 
-fail :: Either String a
-fail = Left
-
+-- | This is the main state update function.
+-- Given an action and a state, return the updated state.
+-- This is in an exception monad ('Either String') in case the action or state
+-- make no sense together.
 act :: Action -> State -> Either String State
 act _ state | isGameOver state = fail "Game is over."
 
@@ -154,44 +228,39 @@ act (GiveClue toWhom _) state@State{..} = do
 act (PlayCard i) state@State{..} = do
   when (i < 0 || i >= length (hands ! getCurrentPlayer state))
     $ fail "Card index out of bounds"
-  pure $ nextTurn $ uncurry playCard $ currentPlayerPopAndDraw state
+  pure $ nextTurn $ uncurry playCard $ currentPlayerPopAndDraw i state
 
 act (Discard i) state@State{..} = do
-  when (i < 0 || i >= length (hands ! currentPlayer))
+  when (i < 0 || i >= length (hands ! getCurrentPlayer state))
     $ fail "Card index out of bounds"
   when (number_of_clues >= 8)
     $ fail "Cannot discard when at max number of clues"
-  pure $ nextTurn $ uncurry discardCard $ currentPlayerPopAndDraw state
+  pure $ nextTurn $ uncurry discardCard $ currentPlayerPopAndDraw i state
 
 act TopDeck state@State{..} = case deck of
   [] -> fail "Cannot topdeck when the deck is empty"
   topDeckCard : newDeck ->
     pure $ nextTurn $ playCard topDeckCard $ state { deck = newDeck }
 
+
+-- * Deck definitions and functions
+
+-- | A standard 60 card Hanabi deck.
 standardDeck :: Deck
 standardDeck =
   [(color, number) | color <- (Rainbow : fmap Colored [minBound .. maxBound])
                    , number <- [1,1,1,2,2,3,3,4,4,5] ]
 
+-- | A simple 50 card Hanabi deck with no rainbow cards
 simpleDeck :: Deck
 simpleDeck =
   [(color, number) | color <- (fmap Colored [minBound .. maxBound])
                    , number <- [1,1,1,2,2,3,3,4,4,5] ]
 
+-- | Randomize the order of the cards in the deck.
 shuffle :: Deck -> IO Deck
 shuffle = undefined
 
 -- | Takes a number of cards to deal out and deals to each player that many.
 deal :: Int -> State -> State
 deal = undefined
-
-type Clue = Either Color CardNumber
-
-clueTrue :: Clue -> Card -> Bool
-clueTrue (Left c)  (Colored c', _) = c == c'
-clueTrue (Left _)  (Rainbow, _)    = True
-clueTrue (Right n) (_, n')         = n == n'
-
--- | queries (like which cards are red) and views (returns a list of bools)
-clueView :: Clue -> Hand -> [Bool]
-clueView = fmap . clueTrue
