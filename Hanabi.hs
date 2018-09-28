@@ -8,16 +8,12 @@ import Control.Arrow ((&&&), (***), second)
 import Control.Monad (when)
 
 import Data.Foldable
-import Data.Maybe (fromJust)
 
 import Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
 
 import Data.Set (Set)
 import qualified Data.Set as Set
-
-import Data.List.NonEmpty (NonEmpty(..))
-import qualified Data.List.NonEmpty as NonEmpty
 
 import Data.Sequence (Seq, pattern (:<|), pattern (:|>), pattern Empty)
 import qualified Data.Sequence as Seq
@@ -155,7 +151,7 @@ updateHandInfoFromClue clue hand = fmap (fst &&& uncurry (go clue)) hand
       (Set.insert c colors, num)
     go (Left c)  (Rainbow, _) (colors, num) =
       (Set.insert c colors, num)
-    go (Right n) (_, n') (colors, num) | n == n' =
+    go (Right n) (_, n') (colors, _) | n == n' =
       (colors, Just n)
     go _ _ view = view
 
@@ -315,6 +311,8 @@ deal n state@State{..} =
     go (x:xs) h = (xs, (x, noCardInfo):h)
 
 
-mkMyState = do
-  deck <- shuffle standardDeck
-  pure $ deal 5 $ mkStartState (Seq.fromList [1,2]) deck
+-- Some stuff for testing
+--
+-- mkMyState = do
+--   deck <- shuffle standardDeck
+--   pure $ deal 5 $ mkStartState (Seq.fromList [1,2]) deck
