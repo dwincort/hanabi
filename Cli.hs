@@ -9,7 +9,7 @@ import Control.Applicative ((<|>))
 import Data.Map.Strict (Map, (!))
 import Data.Maybe (fromJust, maybe, isNothing)
 import qualified Data.Map.Strict as Map
-import Data.List (intercalate)
+import Data.List (intercalate, (\\))
 import qualified Data.Set as Set
 import Data.Sequence (Seq, pattern (:<|), pattern (:|>), pattern Empty)
 import qualified Data.Sequence as Seq
@@ -114,11 +114,21 @@ showYourHand :: Hand -> String
 showYourHand h = "Your hand: " ++ (intercalate "   " (zipWith showYourHandCard [0..] h))
 
 -- Describe the action in present tense.
-showAction :: Action -> String
-showAction (GiveClue p c) = "gives a clue to " ++ show p ++ " naming " ++ showClue c ++ "."
-showAction (PlayCard i) = "plays a card."
-showAction (Discard i) = "discards a card."
-showAction (TopDeck) = "topdecks."
+showAction :: State -> State -> PlayerId -> Action -> String
+showAction s s' a (GiveClue p c) = "Player " ++ show a ++ " gives a clue to " ++ show p ++ " naming " ++ showClue c ++ "."
+showAction s s' a (PlayCard i) = preamble ++ "\n" ++ showPlay s s'
+    where
+    preamble = "Player " ++ show a ++ " plays a card."
+showAction s s' a (Discard i) = "Player " ++ show a ++ " discards a " ++ showCards (s' `diffDiscards` s)
+showAction s s' a (TopDeck) = preamble ++ "\n" ++ showPlay s s'
+    where
+    preamble = "Player " ++ show a ++ " topdecks."
+
+-- Describe what happened in a state where we tried to play a card.
+showPlay :: State -> State -> String
+showPlay s s' = case s' `diffDiscards` s of
+        [] -> "Success! " ++ showCards (s' `diffPlays` s)
+        ds -> "Failure: discarded " ++ showCards ds ++ " and ate a bomb!"
 
 -- Describe the clue:
 showClue :: Clue -> String
@@ -190,7 +200,8 @@ readEvalAction cs = do
             Haskeline.outputStrLn m
             readEvalAction cs
         Right s' -> do
-            let actionDescription = showAction action
+            let s = state cs
+            let actionDescription = showAction s s' (getCurrentPlayer s) action
             pure $ CliState s' (actionDescription:(history cs))
 
 actionSpec :: Parsec.Parsec String () Char
@@ -224,10 +235,35 @@ clue :: Parsec.Parsec String () Clue
 clue = Left <$> color 
     <|> Right <$> num
 
+class Diff a where
+    diff :: a -> a -> a
+
+instance Diff Int where
+    diff = (-)
+
+instance (Ord k, Num v, Eq v) => Diff (Map k v) where
+    -- remove keys that become zero
+    diff = Map.differenceWith (\a b -> case a-b of 0 -> Nothing; c -> Just c)
+
+instance Eq a => Diff [a] where
+    -- list difference
+    diff = (\\)
+
+stateDiff :: Diff a => (State -> a) -> State -> State -> a
+stateDiff f s' s = (f s') `diff` (f s)
+
+diffDiscards :: State -> State -> [Card]
+diffDiscards = stateDiff discards
+
+diffPlays :: State -> State -> [Card]
+diffPlays s' s = Map.toList $ stateDiff played_cards s' s
+
 {-
-d = simpleDeck
+d <- shuffle simpleDeck
 s = mkStartState (Seq.fromList [1,2]) d
 s' = deal 5 s
+a = TopDeck
+Right s'' = act a s'
 putStrLn $ showStateToPlayer 1 s'
 
 showPlayerOrder (Seq.fromList [], Fixed)
