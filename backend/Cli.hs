@@ -1,4 +1,5 @@
-{-# LANGUAGE RecordWildCards, PatternSynonyms #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Cli where
 
@@ -6,18 +7,18 @@ import Hanabi
 
 import Control.Applicative ((<|>))
 
-import Data.Map.Strict (Map, (!))
-import Data.Maybe (fromJust, maybe, isNothing)
+import           Data.List       (intercalate, (\\))
+import           Data.Map.Strict (Map, (!))
 import qualified Data.Map.Strict as Map
-import Data.List (intercalate, (\\))
-import qualified Data.Set as Set
-import Data.Sequence (Seq, pattern (:<|), pattern Empty)
-import qualified Data.Sequence as Seq
+import           Data.Maybe      (fromJust, isNothing, maybe)
+import           Data.Sequence   (pattern (:<|), pattern Empty, Seq)
+import qualified Data.Sequence   as Seq
+import qualified Data.Set        as Set
 
-import qualified System.Console.ANSI as ANSI
+import qualified System.Console.ANSI      as ANSI
 import qualified System.Console.Haskeline as Haskeline
 
-import qualified Text.Parsec as Parsec
+import qualified Text.Parsec      as Parsec
 import qualified Text.Parsec.Char as PC
 
 -- Shows only information that is available to all players.
@@ -38,7 +39,7 @@ showStateToPlayer p state = intercalate "\n" [
     showPlayedCards $ played_cards state,
     showCluesFails (number_of_clues state) (number_of_fails state),
     showDiscards $ discards state,
-    showYourHand  $ hands state ! p,
+    showYourHand $ hands state ! p,
     showHands $ Map.delete p (hands state),
     showPlayerOrder $ player_order state
     ]
@@ -53,12 +54,12 @@ showPlayedCards played_cards
     | otherwise = "Board: " ++ (intercalate " " $ map showCard $ Map.toList played_cards)
 
 shortShowColor :: CardColor -> String
-shortShowColor (Colored Blue) = "B"
-shortShowColor (Colored White) = "W"
+shortShowColor (Colored Blue)   = "B"
+shortShowColor (Colored White)  = "W"
 shortShowColor (Colored Yellow) = "Y"
-shortShowColor (Colored Green) = "G"
-shortShowColor (Colored Red) = "R"
-shortShowColor Rainbow = "Z"
+shortShowColor (Colored Green)  = "G"
+shortShowColor (Colored Red)    = "R"
+shortShowColor Rainbow          = "Z"
 
 -- Card as a 2 character string, like W1 (rainbow=Z)
 showCard :: Card -> String
@@ -72,7 +73,7 @@ showCluesFails :: Int -> Int -> String
 showCluesFails c f = "There are " ++ show c ++ " clues and " ++ show f ++ " bombs remaining."
 
 showDiscards :: [Card] -> String
-showDiscards [] = "Discards: (none)"
+showDiscards []       = "Discards: (none)"
 showDiscards discards = "Discards: " ++ showCards discards
 
 showPlayer :: PlayerId -> String
@@ -116,11 +117,11 @@ showYourHand h = "Your hand: " ++ (intercalate "   " (zipWith showYourHandCard [
 
 -- Describe the action in present tense.
 showAction :: State -> State -> PlayerId -> Action -> String
-showAction s s' a (GiveClue p c) = "Player " ++ show a ++ " gives a clue to " ++ show p ++ " naming " ++ showClue c ++ "."
-showAction s s' a (PlayCard i) = preamble ++ "\n" ++ showPlay s s'
+showAction _ _ a (GiveClue p c) = "Player " ++ show a ++ " gives a clue to " ++ show p ++ " naming " ++ showClue c ++ "."
+showAction s s' a (PlayCard _) = preamble ++ "\n" ++ showPlay s s'
     where
     preamble = "Player " ++ show a ++ " plays a card."
-showAction s s' a (Discard i) = "Player " ++ show a ++ " discards a " ++ showCards (s' `diffDiscards` s)
+showAction s s' a (Discard _) = "Player " ++ show a ++ " discards a " ++ showCards (s' `diffDiscards` s)
 showAction s s' a (TopDeck) = preamble ++ "\n" ++ showPlay s s'
     where
     preamble = "Player " ++ show a ++ " topdecks."
@@ -133,12 +134,12 @@ showPlay s s' = case s' `diffDiscards` s of
 
 -- Describe the clue:
 showClue :: Clue -> String
-showClue (Left c) = show c
+showClue (Left c)  = show c
 showClue (Right n) = show n
 
 -- Show history
 showHistory :: [String] -> String
-showHistory [] = ""
+showHistory []    = ""
 showHistory (a:_) = a
 
 -- Running a game entails shuffling and dealing the deck, then running turns
@@ -161,7 +162,7 @@ doWhile cond fn initialState
     | otherwise = fn initialState >>= doWhile cond fn
 
 data CliState = CliState {
-    state :: State, -- game state
+    state   :: State, -- game state
     history :: [String] -- actions
 }
 
@@ -196,7 +197,7 @@ readEvalAction cs = do
   let s = state cs
   (action, s') <- repeatOnFail readAction (flip act s) Haskeline.outputStrLn
   let actionDescription = showAction s s' (getCurrentPlayer s) action
-  pure $ CliState s' (actionDescription:history cs)
+  pure $ CliState s' (actionDescription : history cs)
 
 actionSpec :: Parsec.Parsec String () Char
 actionSpec = PC.oneOf "cpdt"
