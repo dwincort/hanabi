@@ -96,8 +96,8 @@ testState = State 25 1
     []
     -- played
     [(Colored Yellow, 1), (Colored Green, 2), (Rainbow, 5)]
-    0
-    0
+    8
+    3
     ([], Fixed)
 
 
@@ -186,6 +186,11 @@ board played_cards = div [class "hand board"] (
     ++ (map (\(cc, cn) -> faceUpCard (Card cc cn) noCardView) played_cards)
     )
 
+tokens : Int -> Int -> Html Msg
+tokens clues fails = div [class "tokens"] (
+    List.repeat clues clue ++ List.repeat fails bomb
+    )
+
 yourHand : Maybe HandView -> Html Msg
 yourHand mhv = case mhv of
     Nothing -> div [] []
@@ -199,6 +204,11 @@ otherHandsAndViews state =
         lookupHandView pid = Maybe.withDefault [] (Dict.get pid (state.views))
     in map (\pid -> (pid, lookupHand pid, lookupHandView pid)) otherPids
 
+bomb : Html Msg
+bomb = div [class "token"] [text "💣"]
+
+clue : Html Msg
+clue = div [class "token"] [text "💥"]
 
 view : Model -> Html Msg
 view model =
@@ -206,6 +216,7 @@ view model =
     ([ h2 [] [ text ("Hanabi -- " ++ (fromInt (length (first model.state.player_order))) ++ " players") ]
     , br [] []
     , board (model.state.played_cards)
+    , tokens model.state.number_of_clues model.state.number_of_fails
     , yourHand (Dict.get model.state.me model.state.views)
     ]
      ++ map hand (otherHandsAndViews model.state))

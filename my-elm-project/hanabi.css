@@ -2,6 +2,7 @@ body {
     font-family: sans-serif;
 }
 
+/* Layout */
 .hand {
     margin: 1em;
 }
@@ -18,8 +19,19 @@ body {
     display: inline-block;
     text-align: center;
     margin: 0px 2px;
+    border-radius: 2px;
 }
 
+.token {
+    border-radius: 15px;
+    width: 30px;
+    height: 30px;
+    display: inline-block;
+    border: 1px solid black;
+    margin: 1em;
+}
+
+/* Card color styles */
 .color-rainbow {
     background: linear-gradient(to right, orange , yellow, green, cyan, blue, violet);
     color: white;
