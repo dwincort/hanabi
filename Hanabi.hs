@@ -138,14 +138,13 @@ failWith = Left
 
 -- | Handle an error, and try again.
 repeatOnFail :: Monad m
-  => m a               -- ^ An initial value
+  => m a               -- ^ A getter for input
   -> (a -> Either b c) -- ^ A computation that may fail
-  -> (b -> m a)        -- ^ Given the failure value, produce a new input to our
-                       -- computation
+  -> (b -> m x)        -- ^ Do something monadic with the failure value before repeating
   -> m c
 repeatOnFail ma f handle = ma >>= \a -> case f a of
-  Left s  -> repeatOnFail (handle s) f handle
-  Right b -> pure b
+  Left b  -> repeatOnFail (handle b >> ma) f handle
+  Right c -> pure c
 
 -- * Clues
 

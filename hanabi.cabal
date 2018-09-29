@@ -23,9 +23,11 @@ library
     DuplicateRecordFields PatternSynonyms TupleSections ViewPatterns
   ghc-options: -O2 -Wall -Wno-name-shadowing -Wno-type-defaults
   build-depends:
-      base >=4.10
-    , ansi-terminal
+      ansi-terminal
+    , base >=4.10
     , containers >=0.5
+    , haskeline
+    , parsec
     , random >=1.1
   default-language: Haskell2010
 
