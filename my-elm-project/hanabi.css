@@ -7,12 +7,30 @@ body {
     margin: 1em;
 }
 
+/* h2s are the headers for the hand rows, and have a right margin */
 .hand h2 {
     display: inline-block;
     margin-right: 1em;
 }
+/* h3 is used for 'discard' - needs left and a right margin */
+.hand h3 {
+    display: inline-block;
+    margin: 0 1em;
+}
+
+/* This stuff causes blocks within 'hand' rows to be vertically aligned */
+.hand:after {
+    content: "";
+    display: inline-block;
+    vertical-align: middle;
+    height: 100%;
+}
+.hand * {
+    vertical-align: middle;
+}
 
 .card {
+    position: relative;
     width: 100px;
     height: 150px;
     border: 2px solid black;
@@ -24,6 +42,30 @@ body {
 .card.highlighted {
     border-color: cyan;
     transform: scale(1.1);
+}
+
+/* The stack of cards that represents the deck */
+.deck-stack {
+    position: relative;
+    display: inline-block;
+    width: 100px;
+    height: 150px;
+    margin-left: 30px;
+}
+
+.deck-card {
+    position: absolute;
+    left: 0;
+    top: 0;     /* changes for each card in stack */
+    background: #fff;
+    width: 100px;
+    height: 150px;
+    border: 1px solid black;
+    text-align: center;
+}
+.deck-card h1 {
+    font-size: 50px;
+    vertical-align: middle;
 }
 
 .token {
@@ -45,6 +87,14 @@ body {
     border-radius: 4px;
     margin: 4px;
     cursor: pointer;
+}
+.card-buttons {
+    position: absolute;
+    bottom: 0px;
+    width: 100%;
+}
+.card-buttons button {
+    width: 100%;
 }
 
 /* Card color styles */

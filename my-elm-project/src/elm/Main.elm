@@ -112,6 +112,9 @@ type Msg =
   | HoverClue Clue
   | ClearHover
   | GiveClue Clue
+  | PlayCard Int
+  | Discard Int
+  | TopDeck
 
 
 update : Msg -> Model -> (Model, Cmd Msg)
@@ -180,10 +183,15 @@ faceUpCard highlighted card cv =
       h3 [] [ text (cardViewDesc cv)]
     ]
 
-faceDownCard: CardView -> Html Msg
-faceDownCard cv =
+faceDownCard: CardView -> Int -> Html Msg
+faceDownCard cv ix =
     div [classList [("card", True), ("facedown", True)] ]
-    [ h3 [] [text (cardViewDesc cv)]]
+    [ h3 [] [text (cardViewDesc cv)]
+    , div [class "card-buttons"]
+        [ button [onClick (PlayCard ix)] [text "Play"]
+        , button [onClick (Discard ix)] [text "Discard"]
+        ]
+    ]
 
 hand : Model -> (PlayerId, Hand, HandView) -> Html Msg
 hand model (pid, cs, hv) =
@@ -200,10 +208,32 @@ hand model (pid, cs, hv) =
     ++ [otherHandClueButtons pid]
     )
 
-board : List (CardColor, CardNumber) -> Html Msg
-board played_cards = div [class "hand board"] (
+
+deckStack: Int -> Html Msg
+deckStack count =
+    let
+        stack_count = 3
+        stack_range = List.range -stack_count -1
+        stack_card_offset = 4   -- pixels
+
+        deck_card_top : Int -> Attribute Msg
+        deck_card_top ix = style "top" ((fromInt (ix * stack_card_offset)) ++ "px")
+
+        stack_cards = map (\ix -> div [class "deck-card", deck_card_top ix] [text nbsp]) stack_range
+    in
+    div [class "deck-stack"]
+        (stack_cards ++ [div
+            [ class "deck-card facedown" ]
+            [ h1 [] [text (fromInt count)]
+            , div [class "card-buttons"] [button [onClick TopDeck] [text "Play Top"]]
+            ]])
+
+board : List (CardColor, CardNumber) -> Int -> List Card -> Html Msg
+board played_cards deck_count discarded_cards = div [class "hand board"] (
     [ h2 [] [text ("Board: ")] ]
     ++ (map (\(cc, cn) -> faceUpCard False (Card cc cn) noCardView) played_cards)
+    ++
+    [deckStack deck_count, h3 [] [text "Discards"]]
     )
 
 tokens : Int -> Int -> Html Msg
@@ -214,7 +244,7 @@ tokens clues fails = div [class "tokens"] (
 yourHand : Maybe HandView -> Html Msg
 yourHand mhv = case mhv of
     Nothing -> div [] []
-    Just hv -> div [class "hand"] ([h2 [] [text "Your hand:"]] ++ map faceDownCard hv)
+    Just hv -> div [class "hand"] ([h2 [] [text "Your hand:"]] ++ map2 faceDownCard hv (List.range 0 (length hv - 1)))
 
 otherHandsAndViews : State -> List (PlayerId, Hand, HandView)
 otherHandsAndViews state =
@@ -250,7 +280,7 @@ view model =
   div []
     ([ h2 [] [ text ("Hanabi -- " ++ (fromInt (length (first model.state.player_order))) ++ " players") ]
     , br [] []
-    , board (model.state.played_cards)
+    , board (model.state.played_cards) (model.state.deck) (model.state.discards)
     , tokens model.state.number_of_clues model.state.number_of_fails
     , yourHand (Dict.get model.state.me model.state.views)
     ]
