@@ -11,7 +11,7 @@ import Data.Maybe (fromJust, maybe, isNothing)
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, (\\))
 import qualified Data.Set as Set
-import Data.Sequence (Seq, pattern (:<|), pattern (:|>), pattern Empty)
+import Data.Sequence (Seq, pattern (:<|), pattern Empty)
 import qualified Data.Sequence as Seq
 
 import qualified System.Console.ANSI as ANSI
@@ -48,7 +48,7 @@ showDeck :: Deck -> String
 showDeck d = "Deck has " ++ (show $ length d) ++ " cards"
 
 showPlayedCards :: Map CardColor CardNumber -> String
-showPlayedCards played_cards 
+showPlayedCards played_cards
     | Map.null played_cards = "Board: (empty)"
     | otherwise = "Board: " ++ (intercalate " " $ map showCard $ Map.toList played_cards)
 
@@ -65,6 +65,7 @@ showCard :: Card -> String
 showCard (color, number) = shortShowColor color ++ show number
 
 -- A list of short cards separated by spaces (W1 B1)
+showCards :: [Card] -> String
 showCards = intercalate " " . map showCard
 
 showCluesFails :: Int -> Int -> String
@@ -81,8 +82,8 @@ showPlayerOrder :: (Seq PlayerId, Continue) -> String
 showPlayerOrder (Empty, Fixed) = "The game is over."
 showPlayerOrder (_ :<| Empty, Fixed) = "This is the last turn."
 showPlayerOrder (_ :<| np :<| nps, Fixed) = showPlayer np ++ " There are " ++ (show $ 2 + length nps) ++ " turns left."
-showPlayerOrder (Empty, Loop) = error "oops"
 showPlayerOrder (_ :<| np :<| _, Loop) = showPlayer np
+showPlayerOrder (_, Loop) = error "oops"
 
 showHand :: Hand -> String
 showHand = showCards . map fst
@@ -99,7 +100,7 @@ showHands hs = intercalate " " [ "Player " ++ (show k) ++ ": " ++ (showHand v)
 -- GW3 (green white 3)
 -- GWx (green white, no #)
 showCardView :: CardView -> String
-showCardView (colors, nums) 
+showCardView (colors, nums)
     | null colors && isNothing nums = "--"
     | null colors = "x" ++ shownNums
     | otherwise = shownColors ++ shownNums
@@ -148,13 +149,14 @@ runGame = do
     let s = deal 5 $ mkStartState (Seq.fromList [1,2]) deck
     let cs = CliState s []
 
-    doWhile (not . isGameOver . state) runTurn cs
+    cs' <- doWhile (not . isGameOver . state) runTurn cs
     putStrLn "game over!"
+    putStrLn $ "Score is " ++ show (score (state cs'))
 
 -- While the condition is true on the state, run the function
 -- within the monad to transform the state into a new state.
 doWhile :: Monad m => (a -> Bool) -> (a -> m a) -> a -> m a
-doWhile cond fn initialState 
+doWhile cond fn initialState
     | not (cond initialState) = pure initialState
     | otherwise = fn initialState >>= doWhile cond fn
 
@@ -172,7 +174,7 @@ runTurn cs = do
     putStrLn $ showHistory (history cs)
     putStrLn $ showCommonState (state cs)
     putStr $ "Give computer to player " ++ (show $ getCurrentPlayer $ state cs) ++ " and press enter..."
-    getLine -- and throw it away
+    _ <- getLine -- and throw it away
 
     ANSI.clearScreen
     let pn = getCurrentPlayer (state cs)
@@ -184,25 +186,17 @@ runTurn cs = do
 
 -- read action input from user
 readAction :: Haskeline.InputT IO Action
-readAction = do
-    line <- fromJust <$> Haskeline.getInputLine "> "
-    case (Parsec.parse action "" line) of
-        Left _ -> do
-            Haskeline.outputStrLn "Invalid input."
-            readAction
-        Right a -> pure a
+readAction =
+  snd <$> repeatOnFail getInput (Parsec.parse action "") onError
+  where getInput  = fromJust <$> Haskeline.getInputLine "> "
+        onError _ = Haskeline.outputStrLn "Invalid input."
 
 readEvalAction :: CliState -> Haskeline.InputT IO CliState
 readEvalAction cs = do
-    action <- readAction
-    case act action (state cs) of
-        Left m -> do
-            Haskeline.outputStrLn m
-            readEvalAction cs
-        Right s' -> do
-            let s = state cs
-            let actionDescription = showAction s s' (getCurrentPlayer s) action
-            pure $ CliState s' (actionDescription:(history cs))
+  let s = state cs
+  (action, s') <- repeatOnFail readAction (flip act s) Haskeline.outputStrLn
+  let actionDescription = showAction s s' (getCurrentPlayer s) action
+  pure $ CliState s' (actionDescription:history cs)
 
 actionSpec :: Parsec.Parsec String () Char
 actionSpec = PC.oneOf "cpdt"
@@ -216,23 +210,25 @@ action = do
         'p' -> PlayCard <$> num
         'd' -> Discard <$> num
         't' -> pure TopDeck
+        _   -> error "Impossible"
 
 -- one char, bwygr, indicating a Color
 color :: Parsec.Parsec String () Color
 color = do
     c <- PC.oneOf "bwygr"
-    pure $ case c of 
+    pure $ case c of
         'b' -> Blue
         'w' -> White
         'y' -> Yellow
         'g' -> Green
         'r' -> Red
+        _   -> error "Impossible"
 
 num :: Parsec.Parsec String () Int
 num = read <$> Parsec.many1 PC.digit
 
 clue :: Parsec.Parsec String () Clue
-clue = Left <$> color 
+clue = Left <$> color
     <|> Right <$> num
 
 class Diff a where
