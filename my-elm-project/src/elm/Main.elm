@@ -30,6 +30,7 @@ main =
 
 type alias Model =
   { state : State
+  , hover_clue : Maybe Clue
   }
 
 -- data synced from server:
@@ -75,10 +76,12 @@ type Color = Blue | White | Yellow | Green | Red
 type CardColor = Colored Color | Rainbow
 type Continue = Loop | Fixed
 
+type Clue = ClueColor Color | ClueNumber CardNumber
+
 
 init : () -> (Model, Cmd Msg)
 init _ =
-  ( Model testState
+  ( Model testState Nothing
   , Cmd.none
   )
 
@@ -106,13 +109,18 @@ testState = State 25 1
 
 type Msg =
   NewState (Result String State)
+  | HoverClue Clue
+  | ClearHover
+  | GiveClue Clue
 
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     NewState (Ok newstate) -> ( { model | state = newstate }, Cmd.none )
-    NewState (Err _) -> ( model, Cmd.none )
+    HoverClue clue -> ( { model | hover_clue = Just clue}, Cmd.none)
+    ClearHover -> ( { model | hover_clue = Nothing}, Cmd.none)
+    _ -> ( model, Cmd.none )
 
 
 
@@ -157,14 +165,17 @@ cardViewValueDesc cnm = case cnm of
     Just cn -> fromInt cn
 
 
+nbsp: String
+nbsp = "\u{00A0}"
+
 cardViewDesc: CardView -> String
 cardViewDesc cv = case cv of
-    CardView [] Nothing -> "\u{00A0}"     -- empty (nonbreaking space) if we know nothing
+    CardView [] Nothing -> nbsp     -- empty if we know nothing
     CardView cvs mv -> cardViewColorDesc cvs ++ cardViewValueDesc mv
 
-faceUpCard : Card -> CardView -> Html Msg
-faceUpCard card cv =
-    div [classList [("card", True), (cardColorClass card.color, True)] ]
+faceUpCard : Bool -> Card -> CardView -> Html Msg
+faceUpCard highlighted card cv =
+    div [classList [("card", True), (cardColorClass card.color, True), ("highlighted", highlighted)] ]
     [ h1 [] [ text (fromInt card.value) ],
       h3 [] [ text (cardViewDesc cv)]
     ]
@@ -174,21 +185,30 @@ faceDownCard cv =
     div [classList [("card", True), ("facedown", True)] ]
     [ h3 [] [text (cardViewDesc cv)]]
 
-hand : (PlayerId, Hand, HandView) -> Html Msg
-hand (pid, cs, hv) = div [class "hand"] (
+hand : Model -> (PlayerId, Hand, HandView) -> Html Msg
+hand model (pid, cs, hv) =
+    let
+        isHighlighted : Card -> Bool
+        isHighlighted c = case model.hover_clue of
+            Nothing -> False
+            Just (ClueColor clue_color) -> Rainbow == c.color || (Colored clue_color) == c.color
+            Just (ClueNumber clue_number) -> clue_number == c.value
+    in
+    div [class "hand"] (
     [ h2 [] [text ("Player " ++ (fromInt pid))] ]
-    ++ (map2 faceUpCard cs hv)
+    ++ (map2 (\card cardView -> faceUpCard (isHighlighted card) card cardView) cs hv)
+    ++ [otherHandClueButtons pid]
     )
 
 board : List (CardColor, CardNumber) -> Html Msg
 board played_cards = div [class "hand board"] (
     [ h2 [] [text ("Board: ")] ]
-    ++ (map (\(cc, cn) -> faceUpCard (Card cc cn) noCardView) played_cards)
+    ++ (map (\(cc, cn) -> faceUpCard False (Card cc cn) noCardView) played_cards)
     )
 
 tokens : Int -> Int -> Html Msg
 tokens clues fails = div [class "tokens"] (
-    List.repeat clues clue ++ List.repeat fails bomb
+    List.repeat clues clueToken ++ List.repeat fails bombToken
     )
 
 yourHand : Maybe HandView -> Html Msg
@@ -204,11 +224,26 @@ otherHandsAndViews state =
         lookupHandView pid = Maybe.withDefault [] (Dict.get pid (state.views))
     in map (\pid -> (pid, lookupHand pid, lookupHandView pid)) otherPids
 
-bomb : Html Msg
-bomb = div [class "token"] [text "💣"]
+clueButtonEvents : Clue -> List (Attribute Msg)
+clueButtonEvents clue = [onClick (GiveClue clue), onMouseOver (HoverClue clue), onMouseLeave (ClearHover)]
 
-clue : Html Msg
-clue = div [class "token"] [text "💥"]
+colorClueButton : PlayerId -> Color -> Html Msg
+colorClueButton pid c = button (clueButtonEvents (ClueColor c) ++ [class (cardColorClass (Colored c))]) [text nbsp]
+
+numberClueButton : PlayerId -> CardNumber -> Html Msg
+numberClueButton pid v = button (clueButtonEvents (ClueNumber v)) [text (fromInt v)]
+
+otherHandClueButtons : PlayerId -> Html Msg
+otherHandClueButtons pid = div [class "clue-buttons"] (
+    map (colorClueButton pid) [Blue, White, Yellow, Green, Red]
+    ++ [br [] []]
+    ++ map (numberClueButton pid) (List.range 1 5))
+
+bombToken : Html Msg
+bombToken = div [class "token"] [text "💣"]
+
+clueToken : Html Msg
+clueToken = div [class "token"] [text "💥"]
 
 view : Model -> Html Msg
 view model =
@@ -219,7 +254,7 @@ view model =
     , tokens model.state.number_of_clues model.state.number_of_fails
     , yourHand (Dict.get model.state.me model.state.views)
     ]
-     ++ map hand (otherHandsAndViews model.state))
+     ++ map (hand model) (otherHandsAndViews model.state))
 
 
 

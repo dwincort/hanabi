@@ -21,6 +21,10 @@ body {
     margin: 0px 2px;
     border-radius: 2px;
 }
+.card.highlighted {
+    border-color: cyan;
+    transform: scale(1.1);
+}
 
 .token {
     border-radius: 15px;
@@ -29,6 +33,18 @@ body {
     display: inline-block;
     border: 1px solid black;
     margin: 1em;
+}
+
+.clue-buttons {
+    display: inline-block;
+}
+.clue-buttons button {
+    width: 25px;
+    height: 25px;
+    border: 1px solid black;
+    border-radius: 4px;
+    margin: 4px;
+    cursor: pointer;
 }
 
 /* Card color styles */
