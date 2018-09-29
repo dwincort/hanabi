@@ -144,15 +144,23 @@ cardColorDesc c = case c of
     Green -> "G"
     Red -> "R"
 
+-- "x" if empty, all single-char colors otherwise
+cardViewColorDesc: List Color -> String
+cardViewColorDesc csm = case csm of
+    [] -> "x"
+    cs -> String.concat (map cardColorDesc cs)
+
+-- "x" if empty, the number otherwise
 cardViewValueDesc: Maybe CardNumber -> String
 cardViewValueDesc cnm = case cnm of
-    Nothing -> "?"
+    Nothing -> "x"
     Just cn -> fromInt cn
+
 
 cardViewDesc: CardView -> String
 cardViewDesc cv = case cv of
     CardView [] Nothing -> "\u{00A0}"     -- empty (nonbreaking space) if we know nothing
-    CardView cvs mv -> String.concat (map cardColorDesc cvs) ++ cardViewValueDesc mv
+    CardView cvs mv -> cardViewColorDesc cvs ++ cardViewValueDesc mv
 
 faceUpCard : Card -> CardView -> Html Msg
 faceUpCard card cv =
