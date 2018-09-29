@@ -1,0 +1,52 @@
+body {
+    font-family: sans-serif;
+}
+
+.hand {
+    margin: 1em;
+}
+
+.hand h2 {
+    display: inline-block;
+    margin-right: 1em;
+}
+
+.card {
+    width: 100px;
+    height: 150px;
+    border: 2px solid black;
+    display: inline-block;
+    text-align: center;
+    margin: 0px 2px;
+}
+
+.color-rainbow {
+    background: linear-gradient(to right, orange , yellow, green, cyan, blue, violet);
+    color: white;
+    -webkit-text-stroke: 2px black;
+    text-stroke: 2px black;
+}
+.color-blue {
+    background: #2e6da4;
+    color: white;
+}
+.color-white {
+    background: #fff;
+    color: black;
+}
+.color-yellow {
+    background: #fffa72;
+    color: black;
+}
+.color-green {
+    background: #037500;
+    color: white;
+}
+.color-red {
+    background: #660f00;
+    color: white;
+}
+.facedown {
+    background: #444;
+    color: white;
+}

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charSet="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>elm-webpack-starter</title>
+    <meta name="description" content="Elm Webpack Starter"/>
+    <meta name="author" content="Peter Morawiec"/>
+    <link rel="shortcut icon" type="image/x-icon" href="favicon.ico"/>
+    <link rel="stylesheet" href="hanabi.css">
+    <script src="main.js" type="text/javascript"></script>
+  </head>
+  <body>
+    <div id="main"></div>
+    <script>
+      var app = Elm.Main.init({
+        node: document.getElementById('main')
+      });
+    </script>
+  </body>
+</html>
