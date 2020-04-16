@@ -38,6 +38,26 @@ data State = State
   -- go to the next turn or not.
   } deriving (Eq, Show)
 
+data PlayerStateView = PlayerStateView
+  { deck            :: Int
+  , other_hands     :: Map PlayerId Hand
+  , my_hand         :: HandView
+  , discards        :: [Card]
+  , played_cards    :: Map CardColor CardNumber
+  , number_of_clues :: Int
+  , number_of_fails :: Int
+  , player_order    :: (Seq PlayerId, Continue)
+  } deriving (Eq, Show)
+
+viewState :: PlayerId -> State -> PlayerStateView
+viewState pid State{..} =
+  PlayerStateView
+  { deck = length deck
+  , other_hands = Map.delete pid hands
+  , my_hand = snd <$> (hands ! pid)
+  , ..
+  }
+
 -- | Make a default start state using a sequence of players (in order by their
 -- turn) and a (hopefully) shuffled deck
 mkStartState :: Seq PlayerId -> Deck -> State
@@ -62,6 +82,7 @@ type PlayerId = Int
 
 type Deck = [Card]
 type Hand = [(Card, CardView)]
+type HandView = [CardView]
 
 type Card = (CardColor, CardNumber)
 
@@ -187,23 +208,26 @@ nextTurn state@State{..} =
 
 -- | Given a card, update the state with an attempt at playing that card.
 --
--- Affects discards, played_cards, and number_of_fails.
+-- Affects discards, played_cards, number_of_fails, and number_of_clues.
 playCard :: Card -> State -> State
 playCard card@(color, number) state@State{..} =
   state
-  { discards = newDiscards
-  , played_cards = newPlayedCards
+  { discards        = newDiscards
+  , played_cards    = newPlayedCards
+  , number_of_clues = newNumberOfClues
   , number_of_fails = newNumberOfFails
   }
   where
-    (newDiscards, newPlayedCards, newNumberOfFails) =
+    (newDiscards, newPlayedCards, newNumberOfClues, newNumberOfFails) =
       case (Map.lookup color played_cards, number) of
         (Nothing, 1) ->
-          (discards, Map.insert color 1 played_cards, number_of_fails)
+          (discards, Map.insert color 1 played_cards, number_of_clues, number_of_fails)
+        (Just 4, 5) ->
+          (discards, Map.insert color 5 played_cards, number_of_clues + 1, number_of_fails)
         (Just n, n') | n + 1 == n' ->
-          (discards, Map.insert color n' played_cards, number_of_fails)
+          (discards, Map.insert color n' played_cards, number_of_clues, number_of_fails)
         _ ->
-          (card : discards, played_cards, number_of_fails - 1)
+          (card : discards, played_cards, number_of_clues, number_of_fails - 1)
 
 -- | Given a card, update the state by discarding the card
 --
@@ -212,7 +236,7 @@ playCard card@(color, number) state@State{..} =
 discardCard :: Card -> State -> State
 discardCard card state@State{..} =
   state
-  { discards = card : discards
+  { discards        = card : discards
   , number_of_clues = number_of_clues + 1
   }
 
@@ -226,7 +250,7 @@ discardCard card state@State{..} =
 currentPlayerPopAndDraw :: Index -> State -> (Card, State)
 currentPlayerPopAndDraw i state@State{..} =
   (poppedCard, state
-    { deck = newDeck
+    { deck  = newDeck
     , hands = newHands'
     })
   where
@@ -246,7 +270,7 @@ currentPlayerPopAndDraw i state@State{..} =
 giveClue :: PlayerId -> Clue -> State -> State
 giveClue receiver clue state@State{..} =
   state
-  { hands = Map.adjust (updateHandInfoFromClue clue) receiver hands
+  { hands           = Map.adjust (updateHandInfoFromClue clue) receiver hands
   , number_of_clues = number_of_clues - 1
   }
 
@@ -310,7 +334,7 @@ shuffle xs = go (length xs) xs [] where
 deal :: Int -> State -> State
 deal n state@State{..} =
   state
-  { deck = deck'
+  { deck  = deck'
   , hands = hands'
   }
   where

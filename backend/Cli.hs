@@ -8,7 +8,7 @@ import Hanabi
 import Control.Applicative ((<|>))
 
 import           Data.List       (intercalate, (\\))
-import           Data.Map.Strict (Map, (!))
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe      (fromJust, isNothing, maybe)
 import           Data.Sequence   (pattern (:<|), pattern Empty, Seq)
@@ -23,25 +23,25 @@ import qualified Text.Parsec.Char as PC
 
 -- Shows only information that is available to all players.
 showCommonState :: State -> String
-showCommonState state = intercalate "\n" [
-    showDeck $ deck state,
-    showPlayedCards $ played_cards state,
-    showCluesFails (number_of_clues state) (number_of_fails state),
-    showDiscards $ discards state
+showCommonState State{..} = intercalate "\n" [
+    showDeck deck,
+    showPlayedCards played_cards,
+    showCluesFails number_of_clues number_of_fails,
+    showDiscards discards
     ]
 
 
 -- Shows common information, plus information that is available to the given player.
 showStateToPlayer :: PlayerId -> State -> String
-showStateToPlayer p state = intercalate "\n" [
-    "You are player " ++ (show p),
-    showDeck $ deck state,
-    showPlayedCards $ played_cards state,
-    showCluesFails (number_of_clues state) (number_of_fails state),
-    showDiscards $ discards state,
-    showYourHand $ hands state ! p,
-    showHands $ Map.delete p (hands state),
-    showPlayerOrder $ player_order state
+showStateToPlayer p (viewState p -> PlayerStateView{..}) = intercalate "\n" [
+    "You are player " ++ show p,
+    "Deck has " ++ show deck ++ " cards",
+    showPlayedCards played_cards,
+    showCluesFails number_of_clues number_of_fails,
+    showDiscards discards,
+    showYourHand my_hand,
+    showHands other_hands,
+    showPlayerOrder player_order
     ]
 
 
@@ -109,10 +109,10 @@ showCardView (colors, nums)
     shownColors = concat $ map (shortShowColor . Colored) $ Set.toList colors
     shownNums = maybe "x" show nums
 
-showYourHandCard :: Int -> (Card, CardView) -> String
-showYourHandCard i (_, cv) = show i ++ ") " ++ showCardView cv
+showYourHandCard :: Int -> CardView -> String
+showYourHandCard i cv = show i ++ ") " ++ showCardView cv
 
-showYourHand :: Hand -> String
+showYourHand :: HandView -> String
 showYourHand h = "Your hand: " ++ (intercalate "   " (zipWith showYourHandCard [0..] h))
 
 -- Describe the action in present tense.
